@@ -1,6 +1,6 @@
 /**
  * 共享密码登录页的服务端组件。
- * 已登录用户直接回首页；未登录用户通过 Server Action 提交密码，浏览器不保存配置中的共享密码。
+ * 已登录用户直接回首页；未登录用户通过 Server Action 提交密码，页面同时展示当前访问密码以便体验。
  */
 import { redirect } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth";
@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { PendingButton } from "@/components/pending-button";
 /**
  * 查询参数 error 仅用于显示登录动作返回的配置/密码错误，不作为认证依据。
- * 示例密码提示只在实际使用示例密码时显示，自定义 APP_PASSWORD 不会被渲染进页面。
+ * 按项目的公开体验需求，始终展示当前 APP_PASSWORD；未配置时明确提示，不用固定密码兜底。
  */
 export default async function Login({
 	searchParams,
@@ -41,12 +41,12 @@ export default async function Login({
 							placeholder="输入共享访问密码"
 						/>
 					</label>
-					{process.env.APP_PASSWORD === "zhiheng-demo" && (
-						<p className="hint">
-							示例密码：
-							<code className="font-mono text-primary">zhiheng-demo</code>
-						</p>
-					)}
+					<p className="hint">
+						访问密码：
+						<code className="font-mono text-primary">
+							{process.env.APP_PASSWORD || "未配置"}
+						</code>
+					</p>
 					{error && (
 						<p role="alert" className="text-sm text-destructive">
 							{error === "config"

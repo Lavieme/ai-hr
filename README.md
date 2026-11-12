@@ -59,6 +59,6 @@ AI 负责起草评价标准、查找简历原文证据，以及整理缺失信�
 
 ## 开始使用
 
-打开工作台，使用管理员提供的共享密码登录。本地示例密码为 `zhiheng-demo`，实际密码由 `APP_PASSWORD` 配置。
+打开工作台，使用登录页展示的访问密码登录。密码由 `APP_PASSWORD` 配置，默认示例值为 `zhiheng-demo`；自定义密码也会显示在登录页。
 
 开发启动、环境变量和验证命令见 [开发与配置](docs/development.md)，自动构建和部署设置见 [GitHub Actions](docs/ci.md)。

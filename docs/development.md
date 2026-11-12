@@ -17,7 +17,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-打开 http://localhost:3000，使用 `.env` 中的 `APP_PASSWORD` 登录。示例密码为 `zhiheng-demo`。`db:seed` 可重复运行，不覆盖已有示例项目；首页“一键体验示例”会另外创建一份项目。
+打开 http://localhost:3000，使用 `.env` 中的 `APP_PASSWORD` 登录。登录页始终展示当前配置的密码，默认示例值为 `zhiheng-demo`。`db:seed` 可重复运行，不覆盖已有示例项目；首页“一键体验示例”会另外创建一份项目。
 
 默认 PostgreSQL 端口为 5438，S3 为 9000，存储控制台为 http://localhost:9001。端口冲突时修改 `.env` 对应端口和连接 URL。`bucket-init` 使用存储镜像自带的 `mcli` 创建本地私有 bucket。
 
@@ -36,12 +36,12 @@ docker compose up --build -d
 
 ## 配置
 
-所有密钥只在服务端读取，不使用 `NEXT_PUBLIC_*`。
+配置不使用 `NEXT_PUBLIC_*`。`APP_PASSWORD` 会展示在登录页，其余密钥仅在服务端使用。
 
 | 配置 | 用途 |
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接字符串 |
-| `APP_PASSWORD` | 共享访问密码 |
+| `APP_PASSWORD` | 共享访问密码，始终展示在登录页 |
 | `AUTH_SECRET` | 至少 32 位的随机会话签名密钥，可用 `openssl rand -hex 32` 生成 |
 | `APP_URL` | 浏览器访问的应用地址 |
 | `COOKIE_SECURE` | 本地 HTTP 为 `false`，生产 HTTPS 为 `true` |
