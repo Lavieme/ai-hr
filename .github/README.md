@@ -1,6 +1,6 @@
 # GitHub Actions
 
-参考 ai-hive，使用单应用 Dockerfile，并通过 SSH 调用 cluster Ansible。不需要 Release、版本标签或 Release Please：推送 main 即可触发部署。
+推送 main 后，工作流检查代码、构建应用镜像，并通过 SSH 调用 cluster Ansible 完成部署。
 
 ## 自动流程
 
@@ -16,7 +16,7 @@ main 流水线串行执行，避免取消正在运行的迁移。测试使用临
 
 ## 镜像仓库
 
-与 ai-hive 一致，镜像构建在 `self-hosted` runner 上使用 Docker Buildx 的 `docker` driver，通过 `docker/build-push-action` 直接使用根目录 `Dockerfile` 构建并推送 `linux/amd64` 镜像。runner 需要可用的 Docker。当前 Dockerfile 自行安装依赖并构建 Next，无需在宿主机重复构建。
+镜像构建在 `self-hosted` runner 上使用 Docker Buildx 的 `docker` driver，通过 `docker/build-push-action` 直接使用根目录 `Dockerfile` 构建并推送 `linux/amd64` 镜像。runner 需要可用的 Docker。当前 Dockerfile 自行安装依赖并构建 Next，无需在宿主机重复构建。
 
 镜像路径固定为 `<DOCKER_REGISTRY>/lavieme/ai-hr`，仓库主机默认 `ghcr.io`。使用 Secrets 中的用户名和密码登录，不使用自动 Token 回退。cluster 需要独立配置私有镜像拉取权限。
 
@@ -25,20 +25,20 @@ main 流水线串行执行，避免取消正在运行的迁移。测试使用临
 | 类型 | 名称 | 用途 |
 | --- | --- | --- |
 | Secret | `DOCKER_REGISTRY` | 仓库主机，可含端口，不含 `https://`；默认 `ghcr.io` |
-| Secret | `DOCKER_USERNAME` | 镜像仓库登录用户，与 ai-hive 相同 |
-| Secret | `DOCKER_PASSWORD` | 镜像仓库推送密码或 Token，与 ai-hive 相同 |
+| Secret | `DOCKER_USERNAME` | 镜像仓库登录用户 |
+| Secret | `DOCKER_PASSWORD` | 镜像仓库推送密码或 Token |
 
 ## 部署控制机
 
 | 类型 | 名称 | 用途 |
 | --- | --- | --- |
-| Secret | `DEPLOY_HOST` | 与 ai-hive 相同的 SSH 部署控制机 |
+| Secret | `DEPLOY_HOST` | SSH 部署控制机 |
 | Secret | `DEPLOY_USERNAME` | SSH 用户 |
 | Secret | `DEPLOY_KEY` | SSH 私钥 |
 | Secret | `DEPLOY_PORT` | 可选，默认 `22` |
 
-部署方式沿用 ai-hive：SSH 进入控制机的 `~/Workspace/cluster`，更新仓库、加载 direnv，然后执行 Ansible。
+部署时通过 SSH 进入控制机的 `~/Workspace/cluster`，更新仓库、加载 direnv，然后执行 Ansible。
 
-首次启用前，将 cluster 新增的 ai-hr 部署代码提交并推送。控制机需要能够拉取 cluster 仓库，具备 Ansible、Nomad、direnv，并已配置 Ansible Vault 解密环境和集群访问凭据。参考 ai-hive，工作流加载该目录的 `direnv export bash`；生产密钥不经 GitHub 传递。
+首次启用前，将 cluster 新增的 ai-hr 部署代码提交并推送。控制机需要能够拉取 cluster 仓库，具备 Ansible、Nomad、direnv，并已配置 Ansible Vault 解密环境和集群访问凭据。工作流加载该目录的 `direnv export bash`；生产密钥不经 GitHub 传递。
 
-还需在 cluster 的加密 `vault.yml` 配置 `vault_ai_hr`、域名 DNS、已有 S3 bucket 的访问权限。具体字段与部署命令见 [cluster 接入说明](../docs/cluster.md) 及 cluster 的 `playbooks/apps/ai-hr/README.md`。发布失败时查看对应检查、构建或 SSH 步骤；回滚通过 cluster 指定之前的 SHA 镜像标签。
+还需在 cluster 的加密 `vault.yml` 配置 `vault_ai_hr`、域名 DNS、已有 S3 bucket 的访问权限。具体字段与部署命令见 cluster 仓库的 `playbooks/apps/ai-hr/README.md`。发布失败时查看对应检查、构建或 SSH 步骤；回滚通过 cluster 指定之前的 SHA 镜像标签。
