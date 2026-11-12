@@ -32,7 +32,7 @@ docker compose up --build -d
 
 应用默认监听 3000。`migrate` 成功后才启动应用；`bucket-init` 会创建私有 bucket。数据库和对象存储使用 Docker named volumes，重启容器不丢数据；`docker compose down` 保留数据，`down -v` 会删除本地数据。
 
-生产环境使用已有 PostgreSQL 和 S3，只部署应用镜像并先运行一次迁移，不需要部署本地 MinIO 服务。自动部署配置见 [GitHub Actions](../.github/README.md)，集群配置见 cluster 仓库的 `playbooks/apps/ai-hr/README.md`。
+生产环境使用已有 PostgreSQL 和 S3，只部署应用镜像并先运行一次迁移，不需要部署本地 MinIO 服务。自动部署配置见 [GitHub Actions](ci.md)，集群配置见 cluster 仓库的 `playbooks/apps/ai-hr/README.md`。
 
 ## 配置
 
