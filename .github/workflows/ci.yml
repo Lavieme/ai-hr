@@ -73,7 +73,7 @@ jobs:
   build-and-push:
     name: 构建与推送应用镜像
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
   deploy:
     name: 部署 main 到 cluster
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 25
     steps:
       # 沿用 ai-hive 的 SSH 控制机方式；只传镜像坐标，应用密钥留在 cluster Vault。
