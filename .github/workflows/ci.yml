@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
 
-# main 流水线串行完成，避免取消正在运行的数据库迁移。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
