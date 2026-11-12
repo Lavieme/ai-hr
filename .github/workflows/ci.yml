@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+# main 流水线串行完成，避免取消正在运行的数据库迁移。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  check:
+    name: 检查、集成测试与生产构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 全部是临时测试凭据，不读取生产数据库、模型服务或对象存储密钥。
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5438/ai_hr
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5438/ai_hr
+      TEST_S3_ENDPOINT: http://localhost:9000
+      APP_PASSWORD: ci-test-password
+      AUTH_SECRET: ci-test-session-secret-at-least-32-characters
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+      # pnpm 版本直接读取 package.json 的 packageManager，与 Docker 保持一致。
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v5
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: 安装依赖并生成 Prisma 客户端
+        run: pnpm install --frozen-lockfile
+      - name: 检查代码
+        run: pnpm lint
+      - name: 启动临时 PostgreSQL 和 S3 兼容存储
+        # 复用本地开发镜像及 bucket-init 重试逻辑，不构建额外存储镜像。
+        run: |
+          docker compose up -d --wait postgres minio
+          docker compose run --rm bucket-init
+      - name: 验证模型并迁移全新数据库
+        run: |
+          pnpm exec prisma validate
+          pnpm db:migrate
+      - name: 验证示例初始化可重复执行
+        run: |
+          pnpm db:seed
+          pnpm db:seed
+      - name: 运行单元测试与数据库、存储集成测试
+        # TEST_* 开启真实集成用例；AI 仍使用模拟响应，无需外部 Key。
+        run: pnpm test
+      - name: 生产构建
+        run: pnpm build
+      - name: 类型检查
+        # 放在构建后，确保全新检出时 Next 已生成路由类型。
+        run: pnpm typecheck
+      - name: 输出失败时的服务日志
+        if: failure()
+        run: docker compose logs --no-color postgres minio
+      - name: 清理临时容器和数据卷
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  build-and-push:
+    name: 构建与推送应用镜像
+    needs: check
+    runs-on: self-hosted
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
+      - name: 登录镜像仓库
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY || 'ghcr.io' }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      # 单个 Dockerfile 直接构建镜像，复用 self-hosted runner 的 Docker。
+      # 当前 Dockerfile 已包含依赖安装和 Next 构建，无需复制 monorepo 的构建步骤。
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY || 'ghcr.io' }}/lavieme/ai-hr:main
+            ${{ secrets.DOCKER_REGISTRY || 'ghcr.io' }}/lavieme/ai-hr:sha-${{ github.sha }}
+
+  deploy:
+    name: 部署 main 到 cluster
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # 沿用 ai-hive 的 SSH 控制机方式；只传镜像坐标，应用密钥留在 cluster Vault。
+      - name: 执行 cluster Ansible 部署
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          AI_HR_IMAGE_REPO: ${{ secrets.DOCKER_REGISTRY || 'ghcr.io' }}/lavieme/ai-hr
+          AI_HR_IMAGE_TAG: sha-${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          command_timeout: 23m
+          envs: AI_HR_IMAGE_REPO,AI_HR_IMAGE_TAG
+          script: |
+            set -eu
+            cd ~/Workspace/cluster
+            git pull --ff-only
+            eval "$(direnv export bash)"
+            export PATH="$HOME/.local/bin:$PATH"
+            ansible-playbook -i inventories/prod/hosts.ini playbooks/apps/ai-hr/deploy.yml \
+              -e "ai_hr_image_repo=$AI_HR_IMAGE_REPO" \
+              -e "ai_hr_image_tag=$AI_HR_IMAGE_TAG"

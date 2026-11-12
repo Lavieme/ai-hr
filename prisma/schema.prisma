@@ -1,0 +1,150 @@
+// 关系表保存可查询、可约束的业务数据；评价卡快照及 AI 建议使用 JSON 保留结构。
+// 数据库连接由 prisma.config.ts 和服务端环境变量提供，不在模型中保存凭据。
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+datasource db {
+  provider = "postgresql"
+}
+/// 共享工作台中的招聘项目，是候选人、评价卡、附件和反馈的归属边界。删除项目级联清理关联数据库记录；S3 对象由业务层单独删除。
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  /// 岗位描述的解析或粘贴文本；原始文件另存 Attachment。
+  jd          String   @default("")
+  /// 默认启用展示层盲筛，不代表原始数据的权限隔离。
+  blind       Boolean  @default(true)
+  /// 当前评价卡版本号，保存时递增，并与 CardVersion 同步写入事务。
+  version     Int      @default(1)
+  /// 经理确认人显示名称；评价卡修订后确认信息会被重置。
+  confirmedBy String   @default("")
+  /// 尚未确认时为空。
+  confirmedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  criteria    Criterion[]
+  versions    CardVersion[]
+  candidates  Candidate[]
+  feedback    Feedback[]
+  attachments Attachment[]
+}
+/// 当前有效的评价标准。保留标准 ID 可以关联已有人工判断，position 决定界面及导出的顺序。
+model Criterion {
+  id         String @id @default(cuid())
+  projectId  String
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title      String
+  /// 这项标准期望找到的可核实材料，不是候选人的实际证据。
+  evidence   String
+  /// 优先级：must 为必需，core 为核心，bonus 为加分。
+  importance String @default("core")
+  position   Int @default(0)
+  judgments  Judgment[]
+  @@index([projectId])
+}
+/// 每次保存评价卡都追加一个不可变快照，便于查看历史，并判断 AI 结果是否仍适用。
+model CardVersion {
+  id        String @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version   Int
+  /// 当时评价卡的完整结构；历史记录不随当前 Criterion 修改。
+  snapshot  Json
+  createdAt DateTime @default(now())
+  @@unique([projectId, version])
+}
+/// 一份候选材料及其人工复核状态。AI 只提供证据建议，最终招聘结论必须由 HR 保存。
+model Candidate {
+  id           String @id @default(cuid())
+  projectId    String
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// 项目内稳定编号，用于盲筛展示；删除候选人后不重新编号。
+  number       Int
+  name         String
+  /// 解析或人工修订后的原文，是证据校验的唯一文本依据。修改正文会使旧 AI 结果失效。
+  content      String
+  source       String @default("文本粘贴")
+  /// 规范化文本的 SHA-256，用于项目内重复检测；不是文件二进制哈希。
+  contentHash  String
+  /// 导入状态：ready 可复核、duplicate 重复、incomplete 待补充、failed 解析失败。
+  importStatus String @default("ready")
+  /// 解析异常或需修正材料的提示，允许保留失败文件后手动补充正文。
+  importNote   String @default("")
+  /// 通过结构校验及原文引用校验的 AI 建议；不能直接当作人工判断。
+  aiResult     Json?
+  /// 生成 AI 建议时使用的评价卡版本，用来拒绝过期证据。
+  aiVersion    Int?
+  /// 评价卡变更后提醒重新检查；保留历史人工结论，但交付前需要再次确认。
+  needsReview  Boolean @default(false)
+  /// 人工结论：interview 进入面试、more 补充信息、hold 暂缓；空值表示尚未决定。
+  decision     String?
+  /// HR 保存的推荐或暂缓依据，不由 AI 自动生成最终结论。
+  reason       String @default("")
+  /// 最近一次人工保存复核的时间。
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  judgments    Judgment[]
+  attachments  Attachment[]
+  @@unique([projectId, number])
+  @@index([projectId, contentHash])
+}
+/// HR 对某位候选人的某一项标准所做的人工判断，与候选人级最终结论分开保存。
+model Judgment {
+  id          String @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  criterionId String
+  criterion   Criterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+  /// evidence 有证据、insufficient 证据不足、unclear 待核实。
+  status      String
+  /// 人工选定的简历原文，服务端验证它确实出现在候选人正文。
+  quote       String @default("")
+  /// 人工判断说明，与原文引用分开保存。
+  note        String @default("")
+  /// 需要面试或后续材料核实的问题。
+  followup    String @default("")
+  @@unique([candidateId, criterionId])
+}
+/// 可跨项目复用的评价卡内容，不关联原项目标准 ID，套用后生成本项目的标准。
+model Template {
+  id        String @id @default(cuid())
+  name      String
+  /// 不含来源标准 ID 的评价卡结构，避免跨项目关联。
+  criteria  Json
+  createdAt DateTime @default(now())
+}
+/// 项目交付后的人工反馈记录，采用简单类型和文本，不增加审批状态机。
+model Feedback {
+  id        String @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// 反馈分类由业务输入校验约束；数据库保持简单字符串。
+  type      String
+  content   String
+  author    String @default("用人经理")
+  createdAt DateTime @default(now())
+  @@index([projectId])
+}
+/// 上传原件的元数据。数据库只保存稳定对象 key，下载时校验权限并即时生成临时签名链接。
+model Attachment {
+  id          String @id @default(cuid())
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  candidateId String?
+  /// 候选人关联可为空：JD 只属于项目；删除候选人时该关联置空。
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  /// 原件用途：jd 为岗位描述，resume 为简历。
+  kind        String
+  /// 保留原始显示文件名，可能包含身份信息，盲筛下载需要额外限制。
+  name        String
+  /// S3 私有对象 key，唯一且长期稳定，不保存会过期的下载 URL。
+  key         String @unique
+  /// 原文件字节数，上传接口在读取前执行 15 MB 上限检查。
+  size        Int
+  /// 服务端根据已支持扩展名选择的 MIME 类型。
+  mime        String
+  createdAt   DateTime @default(now())
+  @@index([projectId])
+}

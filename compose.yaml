@@ -1,0 +1,86 @@
+# 本地开发环境。生产接入已有 PostgreSQL 与 S3，具体映射见部署文档。
+name: zhiheng
+# YAML 锚点让应用和一次性迁移任务复用环境配置，避免连接到不同数据库。
+x-app-env: &app-env
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_hr
+  APP_PASSWORD: ${APP_PASSWORD:?Copy .env.example to .env first}
+  AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET}
+  APP_URL: ${APP_URL:-http://localhost:3000}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com/v1}
+  AI_MODEL: ${AI_MODEL:-deepseek-chat}
+  OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-minioadmin}
+  OSS_SECRET_ACCESS_KEY: ${OSS_SECRET_ACCESS_KEY:-minioadmin123}
+  OSS_BUCKET: ${OSS_BUCKET:-ai-hr}
+  OSS_PATH_PREFIX: ai-hr
+  OSS_REGION: us-east-1
+  OSS_ENDPOINT: http://minio:9000
+  # 下载签名使用浏览器可访问的地址，内部上传走服务名。
+  OSS_PUBLIC_ENDPOINT: ${OSS_PUBLIC_ENDPOINT:-http://localhost:9000}
+  OSS_FORCE_PATH_STYLE: "true"
+  OSS_PRESIGN_EXPIRES_IN: "300"
+services:
+  # PostgreSQL 使用命名卷，普通容器重建不会删除业务数据。
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_hr
+    ports: ["127.0.0.1:${PG_PORT:-5438}:5432"]
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_hr"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  minio:
+    # 直接使用社区维护的 MinIO 兼容镜像，不从源码构建，也不另设本地文件存储。
+    image: pgsty/silo:RELEASE.2026-11-09T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${OSS_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${OSS_SECRET_ACCESS_KEY:-minioadmin123}
+    ports: ["127.0.0.1:${MINIO_PORT:-9000}:9000", "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"]
+    volumes: ["s3_data:/data"]
+  # 一次性建桶任务：服务启动不等于可以接受请求，因此命令内做有限重试。
+  bucket-init:
+    image: pgsty/silo:RELEASE.2026-11-09T00-00-00Z
+    depends_on: [minio]
+    environment:
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-minioadmin}
+      OSS_SECRET_ACCESS_KEY: ${OSS_SECRET_ACCESS_KEY:-minioadmin123}
+      OSS_BUCKET: ${OSS_BUCKET:-ai-hr}
+    entrypoint: ["/bin/sh", "-ec"]
+    # 双美元符号防止 Compose 提前展开变量，由容器内 shell 读取环境变量。
+    command:
+      - |
+        attempt=0
+        until mcli alias set local http://minio:9000 "$$OSS_ACCESS_KEY_ID" "$$OSS_SECRET_ACCESS_KEY"; do
+          attempt=$$((attempt + 1))
+          [ "$$attempt" -lt 30 ] || exit 1
+          sleep 2
+        done
+        mcli mb --ignore-existing "local/$$OSS_BUCKET"
+  # 数据库健康后先完成已有迁移；失败时应用不会启动。
+  migrate:
+    image: zhiheng-ai-hr:local
+    build: .
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+  # 等待迁移及建桶成功，再启动应用，避免首个请求遇到缺表或缺桶。
+  app:
+    image: zhiheng-ai-hr:local
+    build: .
+    ports: ["${APP_PORT:-3000}:3000"]
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      bucket-init: { condition: service_completed_successfully }
+# 命名卷跨容器重建持久化；docker compose down -v 会明确删除这些数据。
+volumes:
+  pg_data:
+  s3_data:

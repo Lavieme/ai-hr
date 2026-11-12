@@ -1,0 +1,5 @@
+# 仅允许以下依赖执行安装构建步骤，用于生成 Prisma 引擎与 esbuild 二进制。
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

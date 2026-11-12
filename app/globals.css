@@ -1,0 +1,116 @@
+/* 全局设计令牌和应用布局；shadcn 基础组件通过同一组语义颜色保持一致。 */
+@import "tailwindcss";
+/* 语义令牌：背景、文字、交互状态与浮层分别定义，避免各组件重复维护颜色。 */
+:root {
+	--background: #fff;
+	--foreground: #18243b;
+	--popover: #fff;
+	--popover-foreground: #18243b;
+	--card: #fff;
+	--card-foreground: #18243b;
+	--primary: #285fe2;
+	--primary-foreground: #fff;
+	--secondary: #ecf2ff;
+	--secondary-foreground: #2856bc;
+	--muted: #f3f6fb;
+	--muted-foreground: #77849a;
+	--accent: #f0f5ff;
+	--accent-foreground: #2856bc;
+	--destructive: #bd4051;
+	--border: #e3e9f2;
+	--input: #dce3ee;
+	--ring: #4471e7;
+}
+/* 将 CSS 变量映射为 Tailwind v4 工具类，例如 bg-primary、text-muted-foreground。 */
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+}
+@layer base {
+	* {
+		border-color: var(--border);
+	}
+	body {
+		margin: 0;
+		background: #f6f8fb;
+		color: var(--foreground);
+		font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+	}
+	button,
+	a,
+	summary {
+		-webkit-tap-highlight-color: transparent;
+	}
+	button:not(:disabled),
+	summary {
+		cursor: pointer;
+	}
+	h1 {
+		font-weight: 700;
+		letter-spacing: -0.03em;
+	}
+}
+@layer components {
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		font-size: 12px;
+		font-weight: 600;
+		color: #53627a;
+	}
+	.hint {
+		font-size: 12px;
+		color: var(--muted-foreground);
+		line-height: 1.7;
+	}
+	.notice {
+		border: 1px solid #f2e1b7;
+		background: #fff9eb;
+		border-radius: 9px;
+		padding: 12px 16px;
+		font-size: 13px;
+		color: #8a661e;
+	}
+	.pill {
+		display: inline-flex;
+		border-radius: 99px;
+		background: #edf3ff;
+		color: #2d5cc9;
+		font-size: 11px;
+		font-weight: 600;
+		padding: 4px 9px;
+	}
+	.pill-green {
+		background: #e7f7ee;
+		color: #168956;
+	}
+	.pill-amber {
+		background: #fff4dc;
+		color: #9a6811;
+	}
+	.page-title {
+		font-size: 28px;
+		line-height: 1.4;
+	}
+	.section-title {
+		font-size: 16px;
+		font-weight: 650;
+	}
+}
